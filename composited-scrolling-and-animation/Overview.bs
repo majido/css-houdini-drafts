@@ -1,0 +1,83 @@
+<pre class='metadata'>
+Title:  CSS Animation Worklet API Level 1
+Status: ED
+Group: houdini
+ED: https://drafts.css-houdini.org/css-paint-api-1/
+Previous Version:
+Shortname: css-animation-api
+Level: 1
+Abstract:
+Editor: Majid Valipour, majidvp@chromium.org
+
+</pre>
+
+<pre class="link-defaults">
+spec:css-break-3; type:dfn; text:fragment
+</pre>
+
+<pre class="anchors">
+urlPrefix: https://heycam.github.io/webidl/; type: dfn;
+    text: NotSupportedError
+    urlPrefix: #dfn-;
+        text: callback this value
+        text: exception
+        text: throw
+        url: throw; text: thrown
+    url: es-invoking-callback-functions; text: Invoke
+urlPrefix: https://html.spec.whatwg.org/multipage/scripting.html; type: dfn;
+    text: reset the rendering context to its default state
+    text: output bitmap
+    text: set bitmap dimensions
+    url: concept-canvas-alpha; text: alpha
+urlPrefix: https://tc39.github.io/ecma262/#sec-; type: dfn;
+    text: constructor
+    text: Construct
+    text: IsArray
+    text: IsCallable
+    text: IsConstructor
+    text: HasProperty
+    url: get-o-p; text: Get
+    url: terms-and-definitions-function; text: function
+    urlPrefix: native-error-types-used-in-this-standard-
+        text: TypeError
+</pre>
+
+Introduction {#intro}
+=====================
+This document describes a new web API that exposes some of that composited animation machinery on
+the web to allow fast rich animation effects possible. For details on the rational and motivation
+see [explainer.md][explainer]
+
+The <<animation worklet>> API provides a way to create scripted animations that can modify a set
+of 'accelerated' properties e.g., transform, opacity, and scroll offset, asynchronously.
+
+Relationship to web animation API: Animations running on <<Animation Worklet>> do not necessarily
+run on main thread and thus are not synchronized with document timline. At the moment we do not
+expose any API to start, stop, compose or otherwise control these animations from outside the
+worklet.
+
+Access to raw input: We are interested on exposing additional user-input (e.g., scrolling) to
+these animations so that authors can create input-drive animations which are not really possible
+today without being exposed to main thread jank.
+
+
+
+Animation Worklet {#animation-worklet}
+==============================
+
+The {{paintWorklet}}'s <a>worklet global scope type</a> is {{PaintWorkletGlobalScope}}.
+
+
+
+Concepts {#concepts}
+====================
+
+
+Registering Custom Animation {#registering-custom-animation}
+====================================================
+
+
+
+Examples {#examples}
+====================
+
