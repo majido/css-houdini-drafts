@@ -44,40 +44,192 @@ urlPrefix: https://tc39.github.io/ecma262/#sec-; type: dfn;
 
 Introduction {#intro}
 =====================
-This document describes a new web API that exposes some of that composited animation machinery on
-the web to allow fast rich animation effects possible. For details on the rational and motivation
-see [explainer.md][explainer]
+This document introduces a new web API for creating fast rich animation effects by exposing
+existing composited animation machinery to the web. For details on the rational and motivation
+see [explainer.md][explainer].
 
 The <<animation worklet>> API provides a way to create scripted animations that can modify a set
-of 'accelerated' properties e.g., transform, opacity, and scroll offset, asynchronously.
+of 'accelerated' properties e.g., transform, opacity, and scroll offset, asynchronously and
+isolated from main thread.
 
 Relationship to web animation API: Animations running on <<Animation Worklet>> do not necessarily
-run on main thread and thus are not synchronized with document timline. At the moment we do not
+run on main thread and thus are not synchronized with document timeline. At the moment we do not
 expose any API to start, stop, compose or otherwise control these animations from outside the
 worklet.
 
-Access to raw input: We are interested on exposing additional user-input (e.g., scrolling) to
+Access to input: We are interested on exposing additional user-input (e.g., scrolling) to
 these animations so that authors can create input-drive animations which are not really possible
 today without being exposed to main thread jank.
 
 
-
 Animation Worklet {#animation-worklet}
 ==============================
+The {{animationWorklet}} attribute allows access to the {{Worklet}} responsible for custom
+animations.
 
-The {{paintWorklet}}'s <a>worklet global scope type</a> is {{PaintWorkletGlobalScope}}.
+The {{animationWorklet}}'s <a>worklet global scope type</a> is {{AnimationWorkletGlobalScope}}.
+
+
+<pre class='idl'>
+callback VoidFunction = void ();
+
+[Global=(Worklet,AnimationWorklet),Exposed=AnimationWorklet]
+interface AnimationWorkletGlobalScope : WorkletGlobalScope {
+    void registerAnimation(DOMString name, VoidFunction animationCtor);
+};
+</pre>
+
+
+<div class='note'>
+    Note: This is how the class should look.
+    <pre class='idl'>
+        callback interface AnimationClass {
+            void animate(DOMHighResolutionTimeStamp timestamp);
+            attribute EventHandler onmessage;
+        };
+    </pre>
+</div>
 
 
 
 Concepts {#concepts}
 ====================
+A <dfn>animation definition</dfn> describes an author defined animation which can be referenced by
+a {{Custom Animator}}. It consists of:
+
+ - A <dfn>class constructor</dfn> which is the class <a>constructor</a>
+
+ - A <dfn>animation function</dfn> which is the animation <a>function</a> callback
+
+
+A <dfn>worklet animatable attribute</dfn> is an attribute that can be read modified inside
+an {{animation worklet}}.
+
+Issue(): The description for what may be an animatable attribute is hand wavy. This should be
+    defines as a subset of Animatable properties as defines in web animation spec
+
+Note: Chrome only supports opacity, transform, and scroll offsets but a user agent may expose any
+    attribute which may be animated efficiently without being subject to slowness in main thread.
+
+An <dfn>animation proxy</dfn> defines a handle to an element which can be used to read or mutate
+explicitly exposed <a>worklet animatable attribute</a> on it.
+
 
 
 Registering Custom Animation {#registering-custom-animation}
+============================================================
+
+
+Creating a Custom Animator  {#creating-custom-animator}
 ====================================================
+
+
+
+Creating Animation Proxy {#creating-animation-proxy}
+====================================================
+An {{animation proxy}} can be constructed in the document scope using the {{AnimationProxy}}
+constructor. The constructor should return a new proxy which allow mutation of requested
+{{worklet animatable attributes}} or throw an exception if it cannot.
+
+An animation proxy can be posted to any animation worklet in a message.
+
+<pre class='idl'>
+[
+    Exposed=(Window,AnimationWorklet),
+    RaisesException=Constructor
+] interface AnimationProxy {
+    [RaisesException] getter CSSStyleValue? (DOMString name);;
+    [RaisesException] setter void (DOMString name, CSSStyleValue? value);
+
+    boolean has(DOMString property);
+    void disconnect();
+};
+
+</pre>
+
+Issue(): Perhaps AnimationProxy should inherit {{StylePropertyMap}}
+
+
+Playing a Custom Animation {#playing-custom-animation}
+======================================================
+Each {{custom animatio}} is associated with an <dfn>animation requested flag</dfn>. It must
+be either <dfn>animation-requested</dfn>, <dfn>animation-not-requested</dfn>. It is initially set to
+<a>animation-not-requested</a>.
+
+To play custom animations.
+
+Loop over current custom animators
+  - If <a>animation requested flag</a> for the animation is <a>animation-requested</a>
+  - Let |name| be the first argument of the |CustomAnimationConstructor|.
+  - Let |animationProxyMap| be the second argument of the |CustomAnimationConstructor|.
+  - If all proxies in |animationProxyMap| are available
+  - lookup |name| in name to custom animation definition map and if not there abort
+  - lookup |name| in name to custom animation instance map and if not there then create one
+    - TODO: create instance and add to map
+  - let |timestamp| be current worklet timestamp (TODO: defines this, time may progresses individually for each instance e.g., UA may decide to provide different time for each once as long as they are individually consistent)
+  - let |animationFunction| be |definition|'s <a>animation function</a>.
+  -  <a>Invoke</a> |animateFunction| with arguments «|timestamp|, |animationProxyMap|»,
+        and with |animationInstance| as the <a>callback this value</a>.
+
+
+Issue(): Should we keep track of proxies passed to a worklet and not <a>animate</a> any
+    {{custom animators}} whose proxies are not within the visual viewport. This is an optimization.
+
+Issue(): We currently do not have an "initialized" notion. Assume the worklet only run frame when
+the object is initialized!
+
+
 
 
 
 Examples {#examples}
 ====================
 
+Example 1: A parallax background. {#example-1}
+-----------------------------------------
+
+<pre class='lang-markup'>
+&lt;div id="myElement"&gt;
+    CSS is awesome.
+&lt;/div&gt;
+
+&lt;style&gt;
+#myElement {
+    --circle-color: red;
+    background-image: paint(circle);
+}
+&lt;/style&gt;
+</pre>
+
+<pre class='lang-javascript'>
+// Inside AnimationWorkletGlobalScope.
+registerAnimation('parallax', class {
+    animate(timestamp) {
+        // read scroller vertical scroll offset.
+        const scrollTop = this.state.scroller.scrollTop
+        // update parallax transform
+        var t = state.parallax.transform;
+        t.m42 =  -0.2 * scrollTop;
+        this.state.parallax.transform = t;
+
+        this.requestAnimationFrame();
+    }
+
+    onmessage(message) {
+        this.state.scroller = message.data[0]
+        this.state.scroller = message.data[1];
+    }
+});
+
+// Inside document scope
+
+document.animationWorklet.import('parallax.js').then(function() {
+    var scroller = new AnimationProxy(getElementById('scroller'), ['scrollTop']);
+    var parallax = new AnimationProxy(getElementById('parallax'), ['transform']);
+
+    var worklet = new AnimationWorklet('parallax');
+    worklet.postMessage([scroller, parallax]);
+});
+
+
+</pre>
