@@ -25,13 +25,16 @@ urlPrefix: https://heycam.github.io/webidl/; type: dfn;
         url: throw; text: thrown
     url: es-invoking-callback-functions; text: Invoke
 urlPrefix: https://www.w3.org/TR/css3-transitions/#; type: dfn;
-    text: animatable-properties
+    text: animatable properties
+urlPrefix: https://www.w3.org/TR/web-animations/#; type: dfn;
+    url: the-documents-default-timeline; text: default document timeline
 urlPrefix: https://tc39.github.io/ecma262/#sec-; type: dfn;
     text: constructor
     text: Construct
     text: IsCallable
     text: IsConstructor
     text: HasProperty
+    url: map-objects; text:map object
     url: get-o-p; text: Get
     url: set-o-p-v-throw; text: Set
     url: terms-and-definitions-function; text: function
@@ -39,11 +42,28 @@ urlPrefix: https://tc39.github.io/ecma262/#sec-; type: dfn;
         text: TypeError
 </pre>
 
+<pre class=biblio>
+{
+    "explainer": {
+        "authors": [
+            "Ian Vollick"
+        ],
+        "href": "https://github.com/w3c/css-houdini-drafts/blob/master/composited-scrolling-and-animation/Explainer.md",
+        "title": "Compositor Worker explained",
+        "status": "CR",
+        "publisher": "W3C",
+        "deliveredBy": [
+            "https://github.com/w3c/css-houdini-drafts/"
+        ]
+    }
+}
+</pre>
+
 Introduction {#intro}
 =====================
 This document introduces a new web API for creating fast rich animation effects by exposing
 existing composited animation machinery to the web. For details on the rational and motivation
-see [explainer.md][explainer].
+see [[explainer]].
 
 The <a>Animation Worklet</a> provides a method to create scripted animations that can mutate a set
 of user visible animatable attributes. The API is designed to make it possible such animations to
@@ -54,15 +74,16 @@ isolated from main thread) but the API is designed to facilitate this.
 Also in future versions we intent to introduce facilities for user code to to require specific
 service level leading to guarantees about the performance of their animation code.
 
-**Relationship to web animation API**: Animations running on <a>Animation Worklet</a> do not
-necessarily run on main thread and thus are not synchronized with <a>The default document
-timeline</a>. At the moment we do not expose any API to start, stop, compose or otherwise control
-these animations from outside the worklet however such functionality can be build on top of the
-lower level messaging primitives that is provided.
 
-**Access to input**: We are interested on exposing additional user input (e.g., scrolling input)
-to these animations so that authors can create jank-free input driven animations which are not
-really possible today.
+Note: <strong>Relationship to web animation API</strong>: Animations running on <a>Animation
+Worklet</a> do not necessarily run on main thread and thus are not synchronized with <a>default
+document timeline</a>. At the moment we do not expose any API to start, stop, compose or otherwise
+control these animations from outside the worklet however such functionality can be build on top
+of the lower level messaging primitives that is provided.
+
+Note: <strong>Access to input</strong>: We are interested on exposing additional user input (e.g.,
+scrolling input) to these animations so that authors can create jank-free input driven animations
+which are not really possible today.
 
 
 Animation Worklet {#animation-worklet}
@@ -110,7 +131,7 @@ a <a>custom animator</a>. It consists of:
  - A <dfn>animation function</dfn> which is the animation <a>function</a> callback
 
 
-A <dfn>worklet animatable attribute</dfn> is a CSS <a>animatable property</a> that can be read
+A <dfn>worklet animatable attribute</dfn> is a CSS <a>animatable properties</a> that can be read
 modified inside an <a>Animation Worklet</a>.
 
 Note: Initially Chrome only supports "accelerated" attributes (i.e., 'opacity', 'transform', and
@@ -255,7 +276,7 @@ To <dfn>create a new custom animator scope</dfn> with <a>animation name</a> |nam
 
         - <a>animation name</a> being |name|
 
-        - state property being {{null}}
+        - state property being a new <a>map object</a>
 
         - <a>animation request flag</a> being <a>animation-requested</a>
 
@@ -280,6 +301,8 @@ constructor. The constructor should return a new proxy which allows mutation of 
 
 An animation proxy can be serialized in a message and posted inside a message to any <a>custom
 animator scope</a> via the <a>custom animator</a> port.
+
+
 
 <pre class='idl'>
 [
@@ -346,7 +369,7 @@ list</a> as |scope|:
         substeps:
 
         TODO: Add steps to create new animation instance given the animation definition.
-        The algorithm should use <a>CreateDataProperty</>(instance, "state", {{null}})
+        The algorithm should use <a>CreateDataProperty</>(instance, "state", new <a>map object</a>)
         to create the state property
 
   7. If the result of <a>Set</a>(|animationInstance|, "state", |state|) is false abort the
