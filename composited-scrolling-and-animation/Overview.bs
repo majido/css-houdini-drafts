@@ -2,7 +2,7 @@
 Title:  CSS Animation Worklet API Level 1
 Status: ED
 Group: houdini
-ED: https://drafts.css-houdini.org/css-paint-api-1/
+ED: https://drafts.css-houdini.org/css-animation-api-1/
 Previous Version:
 Shortname: css-animation-api
 Level: 1
@@ -24,15 +24,11 @@ urlPrefix: https://heycam.github.io/webidl/; type: dfn;
         text: throw
         url: throw; text: thrown
     url: es-invoking-callback-functions; text: Invoke
-urlPrefix: https://html.spec.whatwg.org/multipage/scripting.html; type: dfn;
-    text: reset the rendering context to its default state
-    text: output bitmap
-    text: set bitmap dimensions
-    url: concept-canvas-alpha; text: alpha
+urlPrefix: https://www.w3.org/TR/css3-transitions/#; type: dfn;
+    text: animatable-properties
 urlPrefix: https://tc39.github.io/ecma262/#sec-; type: dfn;
     text: constructor
     text: Construct
-    text: IsArray
     text: IsCallable
     text: IsConstructor
     text: HasProperty
@@ -58,20 +54,21 @@ isolated from main thread) but the API is designed to facilitate this.
 Also in future versions we intent to introduce facilities for user code to to require specific
 service level leading to guarantees about the performance of their animation code.
 
-Relationship to web animation API: Animations running on <a>Animation Worklet</a> do not
-necessarily run on main thread and thus are not synchronized with document timeline. At the moment
-we do not expose any API to start, stop, compose or otherwise control these animations from
-outside the worklet however such functionality can be build on top of the lower level messaging
-primitives.
+**Relationship to web animation API**: Animations running on <a>Animation Worklet</a> do not
+necessarily run on main thread and thus are not synchronized with <a>The default document
+timeline</a>. At the moment we do not expose any API to start, stop, compose or otherwise control
+these animations from outside the worklet however such functionality can be build on top of the
+lower level messaging primitives that is provided.
 
-Access to input: We are interested on exposing additional user input (e.g., scrolling input) to
-these animations so that authors can create jank-free input driven animations which are not really possible today.
+**Access to input**: We are interested on exposing additional user input (e.g., scrolling input)
+to these animations so that authors can create jank-free input driven animations which are not
+really possible today.
 
 
 Animation Worklet {#animation-worklet}
 ==============================
-<dfn>Animation Worklet</dfn> is a {{Worklet}} responsible for custom animators. The {{animationWorklet}}
-attribute allows access to it.
+<dfn>Animation Worklet</dfn> is a {{Worklet}} responsible for all classes related to custom
+animation. The worklet can be accessed via {{animationWorklet}} attribute.
 
 The {{animationWorklet}}'s <a>worklet global scope type</a> is {{AnimationWorkletGlobalScope}}.
 
@@ -113,8 +110,8 @@ a <a>custom animator</a>. It consists of:
  - A <dfn>animation function</dfn> which is the animation <a>function</a> callback
 
 
-A <dfn>worklet animatable attribute</dfn> is an attribute that can be read modified inside
-an <a>Animation Worklet</a>.
+A <dfn>worklet animatable attribute</dfn> is a CSS <a>animatable property</a> that can be read
+modified inside an <a>Animation Worklet</a>.
 
 Note: Initially Chrome only supports "accelerated" attributes (i.e., 'opacity', 'transform', and
 'scroll offset') but a user agent may expose any attribute which may be animated efficiently
@@ -127,16 +124,16 @@ Issue: The description for what may be an animatable attribute is hand wavy. Thi
 An <dfn>animation proxy</dfn> defines a handle to an element which can be used to read or mutate
 explicitly exposed <a>worklet animatable attribute</a> on it.
 
-A <dfn>custom animator</dfn> describes a fully realized animation that links an <a>animation
-definition</a> with its dedicated state including specific animation proxies. It is associated
-with a <a>custom animator scope</a> and consists of:
+A <dfn>custom animator</dfn> describes a fully realized animation linking an <a>animation
+definition</a> with the instance specific state such as its specific animation proxies. It
+consists of:
 
  - A </a>animation name</a>
 
  - A message port
 
 
-A <dfn>custom animator scope</a> consists of:
+A <a>custom animator</a> has an associated <a>custom animator scope</a>. It consists of:
 
  - A </a>animation name</a>
 
@@ -169,7 +166,7 @@ When the <dfn method for=AnimationWorkletGlobalScope>registerAnimation(|name|,
     5. If the result of <a>Type</a>(|prototype|) is not Object, <a>throw</a> a <a>TypeError</a>
         and abort all these steps.
 
-    6. Let |animate| be the result of <a>Get</a>(|prototype|, "paint").
+    6. Let |animate| be the result of <a>Get</a>(|prototype|, "animate").
 
     7. If the result of <a>IsCallable</a>(|animate|) is false, <a>throw</a> a <a>TypeError</a> and
         abort all these steps.
@@ -228,8 +225,8 @@ When the {{CustomAnimator}} constructor is called the user agent <em>must</em> r
 steps:
     1. Let |name| be the first argument of the constructor.
 
-    2. Let |workletGlobalScope| be a {{PaintWorkletGlobalScope}} from the list of
-        <a>worklet's WorkletGlobalScopes</a> from the paint {{Worklet}}.
+    2. Let |workletGlobalScope| be a {{AnimationWorkletGlobalScope}} from the list of
+        <a>worklet's WorkletGlobalScopes</a> from the animation {{Worklet}}.
 
     3. Let |definition| be the result of looking up |name| on the |workletGlobalScope|'s
         <a>animation name to animation definition map</a>.
@@ -344,8 +341,9 @@ list</a> as |scope|:
 
       If |definition| does not exist abort the following steps.
 
-  6. Let |animationInstance| be the result of looking up |name| on |workletGlobalScope|'s <a>paint
-        name to instance map</a>. If |animationInstance| is null run the following substeps:
+  6. Let |animationInstance| be the result of looking up |name| on |workletGlobalScope|'s
+        <a>animation name to instance map</a>. If |animationInstance| is null run the following
+        substeps:
 
         TODO: Add steps to create new animation instance given the animation definition.
         The algorithm should use <a>CreateDataProperty</>(instance, "state", {{null}})
@@ -371,10 +369,10 @@ Issue: Should we keep track of proxies passed to a worklet and not <a>animate</a
     <a>custom animators</a> whose proxies are not within the visual viewport or whose attributes
     are not mutated.
 
-Issue: We currently do not have an "initialized" notion. One option is to delay any message to
-    the animator to be delayed until all its proxies are initialized. A better option is to allow
-    the proxy to be mutated while uninitialized, it is just that the values will not have any
-    effect. The initial value of properties will be the value at the creation time.
+Issue: We currently do not have an "initialized" notion. We allow mutations on the proxies while
+    uninitialized (or inactive). Such mutations will not have any effect until the proxy is
+    initialized. The initial value of properties will be the value at the proxy creation time.
+    Perhaps we should describe that proxy mutation may not take effect immediately.
 
 Closing a Custom Animator {#closing-custom-animator}
 ====================================================
