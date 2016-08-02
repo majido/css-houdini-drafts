@@ -128,13 +128,24 @@ An <dfn>animation proxy</dfn> defines a handle to an element which can be used t
 explicitly exposed <a>worklet animatable attribute</a> on it.
 
 A <dfn>custom animator</dfn> describes a fully realized animation that links an <a>animation
-definition</a> with some state including specific animation proxies. It consists of:
+definition</a> with its dedicated state including specific animation proxies. It is associated
+with a <a>custom animator scope</a> and consists of:
 
- - A animation name
+ - A </a>animation name</a>
+
+ - A message port
+
+
+A <dfn>custom animator scope</a> consists of:
+
+ - A </a>animation name</a>
 
  - A state property which is a <a>structured data</a>.
 
  - An <a>animation requested flag</a>
+
+ - A message port
+
 
 Registering a Custom Animation {#registering-custom-animation}
 ============================================================
@@ -177,33 +188,48 @@ When the <dfn method for=AnimationWorkletGlobalScope>registerAnimation(|name|,
 Note: Taken from paint API spec with some simplifications.
 
 
-The {{AnimationWorkletGlobalScope}} has a <dfn>animation name to instance map</dfn>.
-The map is populated when the author constructs a new custom animator instant.
+The {{AnimationWorkletGlobalScope}} has a <dfn>animation name to instance map</dfn>. The map is
+populated when the user agent constructs a new animation instant to run <a>custom animator</a>.
 
 
 Creating a Custom Animator {#creating-custom-animator}
 ====================================================
-The {{AnimationWorkletGlobalScope}} has a <dfn>animator instance list</dfn>. The list is populated
-when the author constructs a new <a>custom animator</a> instance.
+The {{AnimationWorkletGlobalScope}} has a <dfn>custom animator scope list</dfn>. An <a>custom
+animator scope</a> is constructed and added to the list whenever a new <a>custom animator</a>
+instance is constructed.
 
-The animator instances contains animator specific state so unlike animation instances they
-cannot be disposed arbitrarily.
+The <a>custom animator scope</a> contains animator specific state so unlike animation instances
+they cannot be disposed arbitrarily. Additionally, each scope is able to communicate with
+its associated animator instance in the <a>browsing context</a> through an implicit <a>message
+channel</a>.
 
 <pre class='idl'>
 [
     Exposed=(Window),
     RaisesException=Constructor,
     Constructor(DOMString name)
-] interface CustomAnimator { };
+] interface CustomAnimator {
+    [RaisesException]  void postMessage(any message, optional sequence&lt;Transferable&gt; transfer);
+    attribute EventHandler onmessage;
+};
+</pre>
+
+
+<pre class='idl'>
+[
+    Exposed=(AnimationWorklet)
+] interface CustomAnimatorScope {
+    [RaisesException] void postMessage(any message, optional sequence&lt;Transferable&gt; transfer);
+    attribute EventHandler onmessage;
+};
 </pre>
 
 When the {{CustomAnimator}} constructor is called the user agent <em>must</em> run the following
 steps:
+    1. Let |name| be the first argument of the constructor.
 
-    1.  Let |name| be the first argument of the constructor.
-
-    2.  Let |workletGlobalScope| be a {{PaintWorkletGlobalScope}} from the list of <a>worklet's
-         WorkletGlobalScopes</a> from the paint {{Worklet}}.
+    2. Let |workletGlobalScope| be a {{PaintWorkletGlobalScope}} from the list of
+        <a>worklet's WorkletGlobalScopes</a> from the paint {{Worklet}}.
 
     3. Let |definition| be the result of looking up |name| on the |workletGlobalScope|'s
         <a>animation name to animation definition map</a>.
@@ -211,7 +237,24 @@ steps:
         If |definition| does not exist, throw <a>throw</a> a <a>NotSupportedError</a> and abort
         the following steps.
 
-    4. Let |animator| be a new {{CutomAnimator}} with:
+    4. <a>Create a new {{MessagePort}} object</a>. Let this be the |outside port|.
+
+    5. Let |animator| be a new {{CutomAnimator}} Object with:
+
+        - <a>animation name</a> being |name|
+
+        - <a>message port</> being |outside port|
+
+    6. <a>Create a new custom animator scope</a> with <a>animation name</a> |name|, and
+        {{MessagePort}} |outside port|. Let this be the |scope|
+
+    7. Associate |scope| with |animator|.
+
+    8. Return |animator|.
+
+To <dfn>create a new custom animator scope</dfn> with <a>animation name</a> |name|, and
+{{MessagePort}} |outside port|:
+    1. Create a new {{CustomAnimatorScope}} object |scope| with:
 
         - <a>animation name</a> being |name|
 
@@ -219,8 +262,14 @@ steps:
 
         - <a>animation request flag</a> being <a>animation-requested</a>
 
-    4. Add |animator| to <a>animator instance list</a>.
+    2. <a>Create a new {{MessagePort}} object</a> owned by |scope|. Let |inside port| be this
+        new object.
 
+    3. <a>Entangle</a> |outside port| and |inside port|.
+
+    4. Set |scope|'s port to |inside port|
+
+    5. Add |scope| to <a>custom animator scope list</a>.
 
 Issue: Consider passing an state object in the constructor (which can include proxies) so the
 animator can start ticking and being useful immediately.
@@ -229,32 +278,34 @@ animator can start ticking and being useful immediately.
 Creating Animation Proxy {#creating-animation-proxy}
 ====================================================
 An <a>animation proxy</a> can be constructed in the document scope using the {{AnimationProxy}}
-constructor. The constructor should return a new proxy which allow mutation of requested
+constructor. The constructor should return a new proxy which allows mutation of requested
 <a>worklet animatable attribute</a>s or throw an exception if it cannot.
 
-An animation proxy can be serialized in a message and posted to any <a>custom animator</a>.
+An animation proxy can be serialized in a message and posted inside a message to any <a>custom
+animator scope</a> via the <a>custom animator</a> port.
 
 <pre class='idl'>
 [
     Exposed=(Window,AnimationWorklet),
     RaisesException=Constructor,
-    Constructor(Element, Array<DOMString> proxiedAttributes);
+    Constructor(Element, Array<DOMString> proxiedAttributes)
 ] interface AnimationProxy {
-    [RaisesException] getter CSSStyleValue? (DOMString name);;
+    [RaisesException] getter CSSStyleValue? (DOMString name);
     [RaisesException] setter void (DOMString name, CSSStyleValue? value);
 
     boolean has(DOMString property);
     void disconnect();
 };
-
 </pre>
 
 Issue: Perhaps AnimationProxy should inherit {{StylePropertyMap}}
 
-Issue: Explain what {{disconnect}} does. Also explain what happens if the proxies element
-    is removed. In paint, layout API the worklet instance lifetime is tied to the lifetime of
-    the element. In Animation Worklet, this is not the case so proxied element may get removed
-    while worklet has a handle on them. Explain what happens then.
+Issue: Alternative name: AnimationElementHandle
+
+Issue: Explain what {{disconnect}} does. Also explain what happens if the proxies element is
+    removed. In other houdini APIs (e.g., paint and layout)  the worklet instance lifetime is tied
+    to the lifetime of the element. In Animation Worklet, this is not the case so proxied element
+    may get removed while worklet has a handle on them. Explain what happens then.
 
 
 Running a Custom Animator {#running-custom-animator}
@@ -274,44 +325,47 @@ Note: The user agent is not required to run animations on every frame. It is leg
       details.
 
 
-To generate a custom animation frame, the user agent iterates over <a>animator instance list</a>
-as |animator|:
+To generate a custom animation frame, the user agent iterates over <a>custom animator scope
+list</a> as |scope|:
 
-  1. If the <a>animation requested flag</a> for the animator is <a>animation-not-requested</a>
-     the user agent <em>may</em> abort all the following steps and delete the animator instance.
+  1. If the <a>animation requested flag</a> for the scope is <a>animation-not-requested</a>
+        the user agent <em>may</em> abort all the following steps and delete the custom animator
+        scope instance.
 
   2. Let |name| be the animation name of |animator|.
 
-  3. Let |state| be the state of |animator|.
+  3. Let |state| be the state of |scope|.
 
   4. Let |workletGlobalScope| be a {{AnimationWorkletGlobalScope}} from the list of <a>worklet's
-      WorkletGlobalScopes</a> from the animation {{Worklet}}.
+        WorkletGlobalScopes</a> from the animation {{Worklet}}.
 
   5. Let the |definition| be the result of looking up |name| on the |workletGlobalScope|'s
-      <a>animation name to animation definition map</a>.
+        <a>animation name to animation definition map</a>.
 
       If |definition| does not exist abort the following steps.
 
   6. Let |animationInstance| be the result of looking up |name| on |workletGlobalScope|'s <a>paint
-      name to instance map</a>. If |animationInstance| is null run the following substeps:
-      TODO: Add steps to create new animation instance given the animation definition.
-          The algorithm should use <a>CreateDataProperty</>(instance, "state", {{null}})
-          to create the state property
+        name to instance map</a>. If |animationInstance| is null run the following substeps:
+
+        TODO: Add steps to create new animation instance given the animation definition.
+        The algorithm should use <a>CreateDataProperty</>(instance, "state", {{null}})
+        to create the state property
 
   7. If the result of <a>Set</a>(|animationInstance|, "state", |state|) is false abort the
-      following steps.
+        following steps.
 
   8. Let |animateFunction| be |definition|'s <a>animation function</a>.
 
   9. Let |timestamp| be a {{DOMHighResTimeStamp}} indicating the current frame start time.
 
   10. <a>Invoke</a> |animateFunction| with arguments «|timestamp|»,
-       and with |animationInstance| as the <a>callback this value</a>.
+        and with |animationInstance| as the <a>callback this value</a>.
 
   11. If the result of <a>Set</a>(|animationInstance|, "state", {{null}}) is false abort the
-       following steps.
+        following steps.
 
-Note: It is legal for the user agent to call animate multiple times in the same frame.
+Note: It is legal for the user agent to <a>run a custom animator</a> multiple times in the same
+frame.
 
 Issue: Should we keep track of proxies passed to a worklet and not <a>animate</a> any
     <a>custom animators</a> whose proxies are not within the visual viewport or whose attributes
@@ -329,12 +383,37 @@ animation context.
 
 Receiving and Sending Message {#receiving-and-sending-message}
 =============================================================
-TODO: an animator may send and receive messages.
 
+Each {{CustomAnimator}} instances have an implicit {{MessagePort}} associated with them. This port
+is created when the animator instance is created and should have a lifetime that is as long as the
+animator instance's lifetime.
+
+
+Similarly, each <a>custom animator scope</a> has a {{MessagePort}} which is entangled with the
+associated <a>custom animator</a> port. These ports create an implicit <a>message channel</a>
+which can be used to communicate between the animator instance and its scope.
+
+All messages received by the <a>custom animator</a> port should immediately be re-targeted at the
+{{CustomAnimator}} instance. Similarly any invocation of {{postMessage()}} on the animator
+instance must immediately invoke the method of the same name on the port, with the same arguments,
+and return the same return value.
+
+
+All messages received by the <a>custom animator scope</a> port should immediately be re-targeted
+at an <a>animation instance</a>. This requires the worklet to first associate the animator with an
+<a>animation instance</a> .Similarly any invocation of {{postMessage()}} on the animation instance
+must immediately invoke the method of the same name on the port, with the same arguments, and
+return the same return value.
+
+
+Note: It is legal for a user agents to only deliver messages to a custom animator immediately
+before running that animator.
+
+Issue: Refactor association steps to be used here and in <a>running a custom animator</a>.
 
 Service Level {#service-level}
 ==============================
-TODO: Describe three difference service level that user agent <em>may</em> provide.
+TODO: Describe three difference service levels that user agent <em>may</em> provide.
 
 1. In sync with compositor frame production (isolated, sync)
 2. Async from compositor but on own dedicated thread (isolated, async)
@@ -356,6 +435,8 @@ Example 1: A parallax background. {#example-1}
     &lt;/div&gt;
     Some content that overflows
 &lt;/div&gt;
+
+</pre>
 
 <pre class='lang-javascript'>
 // Inside AnimationWorkletGlobalScope.
