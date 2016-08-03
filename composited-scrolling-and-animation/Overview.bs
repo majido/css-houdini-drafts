@@ -132,18 +132,22 @@ a <a>custom animator</a>. It consists of:
 
 
 A <dfn>worklet animatable attribute</dfn> is a CSS <a>animatable properties</a> that can be read
-modified inside an <a>Animation Worklet</a>.
+and mutated inside an <a>Animation Worklet</a>.
 
-Note: Initially Chrome only supports "accelerated" attributes (i.e., 'opacity', 'transform', and
-'scroll offset') but a user agent may expose any attribute which may be animated efficiently
-without being subject to slowness in main thread.
+Note: Initially Chrome only supports "accelerated" attributes (i.e., 'opacity', 'transform',
+'scrollTop', and 'scrollLeft') but user agents may expose any attribute which may be animated
+efficiently without being subject to slowness in main thread.
 
 Issue: The description for what may be an animatable attribute is hand wavy. This should be
     defined as a subset of animatable properties as described in web animation spec.
 
 
 An <dfn>animation proxy</dfn> defines a handle to an element which can be used to read or mutate
-explicitly exposed <a>worklet animatable attribute</a> on it.
+explicitly exposed <a>worklet animatable attribute</a> on it. It consists of:
+
+ - A <dfn>proxied element</dfn>
+
+ - A map of proxied attributes and their values
 
 A <dfn>custom animator</dfn> describes a fully realized animation linking an <a>animation
 definition</a> with the instance specific state such as its specific animation proxies. It
@@ -205,7 +209,6 @@ When the <dfn method for=AnimationWorkletGlobalScope>registerAnimation(|name|,
 
 Note: Taken from paint API spec with some simplifications.
 
-
 The {{AnimationWorkletGlobalScope}} has a <dfn>animation name to instance map</dfn>. The map is
 populated when the user agent constructs a new animation instant to run <a>custom animator</a>.
 
@@ -252,7 +255,7 @@ steps:
     3. Let |definition| be the result of looking up |name| on the |workletGlobalScope|'s
         <a>animation name to animation definition map</a>.
 
-        If |definition| does not exist, throw <a>throw</a> a <a>NotSupportedError</a> and abort
+        If |definition| does not exist, <a>throw</a> a <a>NotSupportedError</a> and abort
         the following steps.
 
     4. <a>Create a new {{MessagePort}} object</a>. Let this be the |outside port|.
@@ -296,19 +299,19 @@ animator can start ticking and being useful immediately.
 Creating Animation Proxy {#creating-animation-proxy}
 ====================================================
 An <a>animation proxy</a> can be constructed in the document scope using the {{AnimationProxy}}
-constructor. The constructor should return a new proxy which allows mutation of requested
-<a>worklet animatable attribute</a>s or throw an exception if it cannot.
+constructor. <a>Animation proxy</a> is a <a>clonable object</a> and thus can be serialized in a
+message and posted to any <a>custom animator scope</a> via the <a>custom animator</a> port.
 
-An animation proxy can be serialized in a message and posted inside a message to any <a>custom
-animator scope</a> via the <a>custom animator</a> port.
-
+The {{AnimationProxy}} constructor takes two parameters, first the element which is being proxied,
+and second a list of {{DOMString}} identifying all of the <a>worklet animatable attribute</a>
+which may be read or mutated using this proxy.
 
 
 <pre class='idl'>
 [
     Exposed=(Window,AnimationWorklet),
     RaisesException=Constructor,
-    Constructor(Element, Array<DOMString> proxiedAttributes)
+    Constructor(Element element, sequence<DOMString> proxiedAttributes)
 ] interface AnimationProxy {
     [RaisesException] getter CSSStyleValue? (DOMString name);
     [RaisesException] setter void (DOMString name, CSSStyleValue? value);
@@ -318,41 +321,64 @@ animator scope</a> via the <a>custom animator</a> port.
 };
 </pre>
 
+When the {{AnimationProxy}} constructor is called the user agent <em>must</em> run the following
+steps:
+
+    1. Let |element| and |proxiedAttributes| be the first and second arguments of the constructor.
+
+    2. If |element| is null or not an instance of {{Element}} abort the following steps.
+
+    4. If any of the attribute in |proxiedAttributes| is not a <a>worklet animatable attribute</a>
+        i.e., cannot be read or cannot be mutated inside an <a>animation worklet</a>, <a>throw</a>
+        a <a>NotSupportedError</a> and abort the following steps.
+
+
+    3. Let |proxy| be a new {{AnimationProxy}} Object with:
+
+        - <a>proxied element</a> being |element|
+
+    4. Populate |proxy| with the <a>computed value</a>’s for properties listed in
+        |proxiedAttributes|.
+
+    5. Return proxy
+
+
+Any mutation on the proxied attributes updates the effective value of that attribute on the
+proxied element.
+
 Issue: Perhaps AnimationProxy should inherit {{StylePropertyMap}}
 
-Issue: Alternative name: AnimationElementHandle
-
-Issue: Explain what {{disconnect}} does. Also explain what happens if the proxies element is
-    removed. In other houdini APIs (e.g., paint and layout)  the worklet instance lifetime is tied
-    to the lifetime of the element. In Animation Worklet, this is not the case so proxied element
-    may get removed while worklet has a handle on them. Explain what happens then.
+Issue: Explain {{disconnect}} which also explains what happens when a proxied element is removed.
+    In other houdini APIs (e.g., paint and layout) the painter is only invocated if the the
+    element is alive. In <a>Animation Worklet</a> this is not the case so proxied element may get
+    removed while worklet has a handle on them. Such removals are equivalent to explicitly calling
+    |disconnect|.
 
 
 Running a Custom Animator {#running-custom-animator}
 ======================================================
 Each <a>custom animator</a> is associated with an <dfn>animation requested flag</dfn>. It must be
 either <dfn>animation-requested</dfn>, <dfn>animation-not-requested</dfn>. It is initially set to
-<a>animation-not-requested</a>.
+<a>animation-requested</a>.
 
 When a user agent decides to produce a new animation frame, if for a <a>custom animator</a> the
 associated <a>animation request flag</a> is <a>animation-requested</a> then the the user agent
 <em>may</em> <a>generate a custom animation frame</a> for the current frame.
 
+Note: The user agent is not required to run animations on every frame. It is legal to defer
+      <a>generating a custom animation frame<a> until a later frame. This allow the user agent to
+      provide a different service level according to their policy. See <a>Service Level</a> for
+      more details.
 
-Note: The user agent is not required to run animations on every frame. It is legal to defer the
-      <a>generate an animation frame<a> until a later frame. This allow the user agent to provide
-      a different service level according to their policy. See <a>Service LeveL</a> for more
-      details.
 
-
-To generate a custom animation frame, the user agent iterates over <a>custom animator scope
-list</a> as |scope|:
+To <dfn>generate a custom animation frame</dfn>, the user agent iterates over <a>custom animator
+scope list</a> as |scope|:
 
   1. If the <a>animation requested flag</a> for the scope is <a>animation-not-requested</a>
-        the user agent <em>may</em> abort all the following steps and delete the custom animator
-        scope instance.
+        the user agent <em>may</em> abort all the following steps and remove the |scope| from the
+        list.
 
-  2. Let |name| be the animation name of |animator|.
+  2. Let |name| be the animation name of |scope|.
 
   3. Let |state| be the state of |scope|.
 
@@ -369,7 +395,7 @@ list</a> as |scope|:
         substeps:
 
         TODO: Add steps to create new animation instance given the animation definition.
-        The algorithm should use <a>CreateDataProperty</>(instance, "state", new <a>map object</a>)
+        The algorithm should use <a>CreateDataProperty</>(instance, "state", {{null}})
         to create the state property
 
   7. If the result of <a>Set</a>(|animationInstance|, "state", |state|) is false abort the
@@ -382,8 +408,12 @@ list</a> as |scope|:
   10. <a>Invoke</a> |animateFunction| with arguments «|timestamp|»,
         and with |animationInstance| as the <a>callback this value</a>.
 
-  11. If the result of <a>Set</a>(|animationInstance|, "state", {{null}}) is false abort the
-        following steps.
+  11. Let |newState| be the result of <a>Get</a>(|animationInstance|, "state").
+
+  12. Update |scope|'s state to be |newState|.
+
+  13. Call <a>Set</a>(|animationInstance|, "state", {{null}}).
+
 
 Note: It is legal for the user agent to <a>run a custom animator</a> multiple times in the same
 frame.
@@ -397,6 +427,9 @@ Issue: We currently do not have an "initialized" notion. We allow mutations on t
     initialized. The initial value of properties will be the value at the proxy creation time.
     Perhaps we should describe that proxy mutation may not take effect immediately.
 
+Issue: We need to throw an error when animation tries to store non-clonable data in state.
+    Should this be this eagerly at step 12?
+
 Closing a Custom Animator {#closing-custom-animator}
 ====================================================
 TODO: Define a close function that ends the animator. It can be called from document context or
@@ -409,26 +442,25 @@ Each {{CustomAnimator}} instances have an implicit {{MessagePort}} associated wi
 is created when the animator instance is created and should have a lifetime that is as long as the
 animator instance's lifetime.
 
-
 Similarly, each <a>custom animator scope</a> has a {{MessagePort}} which is entangled with the
-associated <a>custom animator</a> port. These ports create an implicit <a>message channel</a>
-which can be used to communicate between the animator instance and its scope.
+associated <a>custom animator</a> port. Together, these ports create an implicit <a>message
+channel</a> which can be used to communicate between the animator instance and its scope.
 
-All messages received by the <a>custom animator</a> port should immediately be re-targeted at the
-{{CustomAnimator}} instance. Similarly any invocation of {{postMessage()}} on the animator
+All messages received by the <a>custom animator</a> port <em>should</em> immediately be re-
+targeted at the {{CustomAnimator}} instance. Similarly any invocation of {{postMessage()}} on the
+animator instance <em>must</em> immediately invoke the method of the same name on the port, with
+the same arguments, and return the same return value.
+
+All messages received by the <a>custom animator scope</a> port <em>should</em> immediately be re-
+targeted at an <a>animation instance</a>. This requires the worklet to first associate the scope
+with an <a>animation instance</a>. Similarly any invocation of {{postMessage()}} on the animation
 instance must immediately invoke the method of the same name on the port, with the same arguments,
 and return the same return value.
 
 
-All messages received by the <a>custom animator scope</a> port should immediately be re-targeted
-at an <a>animation instance</a>. This requires the worklet to first associate the animator with an
-<a>animation instance</a> .Similarly any invocation of {{postMessage()}} on the animation instance
-must immediately invoke the method of the same name on the port, with the same arguments, and
-return the same return value.
-
-
-Note: It is legal for a user agents to only deliver messages to a custom animator immediately
-before running that animator.
+Note: It is legal for a user agents to only deliver messages to a custom animator scope
+immediately before running that animator. Similarly messages to a custom animator may be deferred
+to any appropriate time in the document lifecycle.
 
 Issue: Refactor association steps to be used here and in <a>running a custom animator</a>.
 
